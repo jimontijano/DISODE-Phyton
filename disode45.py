@@ -1,29 +1,46 @@
 import numpy as np
-import math
 import sys
 from struct import Struct
 from types import SimpleNamespace
 
 def disode45(FUN, switchfun, tspan, Y, options):
     """
-    Traducido de MATLAB a Python.
-    
-    Parámetros:
-    - FUN: Función del campo vectorial f(t, y)
-    - switchfun: Función de las superficies de conmutación g(t, y)
-    - tspan: Lista o np.array con los tiempos [t0, t_final] o instantes específicos
-    - Y: Vector de condiciones iniciales (np.array unidimensional de tamaño neq)
+
+   DISODE45  is a program for the numerical integration of ODEs with
+   DISCONTINUITIES.  Filippov type systems are allowed.
+   It is based on the CMR54D pair of embedded Runge-Kutta methods specially 
+   designed by M. Calvo, J.I. Montijano and L. Rández for this class of 
+   problems
+   The function or functions that define the manifolds of the
+   discontinuities g(x,y) are supposed to be known, provided
+   by the user.
+
+  [TOUT,YOUT] = DISODE45(ODEFUN,SWITCHFUN, TSPAN,Y0), with TSPAN = [T0 TFINAL]
+     integrates the system of differential equations y' = f(t,y) from time T0 
+     to TFINAL with initial conditions Y0.
+     
+  Input arguments:
+    ODEFUN is a function handle. For a scalar T and a vector Y, ODEFUN(T,Y)
+         must return a column vector corresponding to f(t,y).
+    SWITCHFUN is a function handle. [values, isterminal, direction]=SWITCHFUN(T,Y) must return
+         a column vector VALUES in which the component i contains the value of the
+         i function g_i(t,y) defining the i-eme discontinuity manifold.
+         It also returns a column vector ISTERMINAL and a column vector
+         DIRECTION.
+  Output arguments:
+    Each row in the solution array YOUT corresponds to a time
+     returned in the column vector TOUT.
+
     - options: Objeto con las opciones de configuración (clase Struct)
+  
     """
     
-    # Asegurar que Y sea un arreglo de tipo flotante en NumPy
     Y = np.array(Y, dtype=float).flatten()
     
-    # 1. Configuración de parámetros por defecto si 'options' no se suministra
+ # 1. Configuration of the de defaul values if they are nor provided in 'options'
    
     if options is None:
        options = SimpleNamespace()
-        
     if not hasattr(options, 'AbsTol'): options.AbsTol = 1e-4
     if not hasattr(options, 'RelTol'): options.RelTol = 1e-4
     if not hasattr(options, 'Gradient'): options.Gradient = None
@@ -44,11 +61,10 @@ def disode45(FUN, switchfun, tspan, Y, options):
     Verbose = options.Verbose
     gradcomponents = options.GradientComponents
  
-# Variables persistentes en MATLAB -> Variables locales de control en Python
     IFIR = 1
     rundata = options  # Enlazar la configuración para compartirla
     
-    # 2. Inicialización del problema (Primera llamada equivalent al persistent IFIR == 1)
+ # 2. Inicialitation of the problem
     if IFIR == 1:
         IFIR = 0
         X = tspan[0]
@@ -64,7 +80,7 @@ def disode45(FUN, switchfun, tspan, Y, options):
             xx[nout - 1] = X
             yy[nout - 1, :] = Y
         else:
-            chunk = int(min(max(100, 50 * Refine), Refine + np.floor((2**13) / neq))+1000000)
+            chunk = int(min(max(100, 50 * Refine), Refine + np.floor((2**13) / neq))+100)
             npoints = chunk
             xx = np.zeros(chunk)
             yy = np.zeros((chunk, neq))
@@ -247,7 +263,7 @@ def disode45(FUN, switchfun, tspan, Y, options):
                 
         # CONTROL DE FLUJO 2: Integración en superficie de deslizamiento (sliding)
         elif integration_flow == 2:
-            if Verbose >= 1:
+            if Verbose >= 0:
                 print(f"\n Enter slide X, Y, H, indsliding: {X} {np.linalg.norm(Y)} {H} {indsliding}")
                 
                 
@@ -298,7 +314,6 @@ def disode45(FUN, switchfun, tspan, Y, options):
                 
         # CONTROL DE FLUJO 4 o 7: Codimensión > 2 o superficies tangenciales. Se recurre a solver estándar
         elif integration_flow in [4, 7]:
-            print("pasa")
             if Verbose >= 0:
                 if integration_flow == 4:
                     ndis = len(indsliding) if isinstance(indsliding, (list, np.ndarray)) else 1
@@ -322,8 +337,8 @@ def disode45(FUN, switchfun, tspan, Y, options):
                 nadd = len(tspanlast)
                 
                 # Integrar con solve_ivp usando el método RK45 (equivalente a ode45)
-                ffout, xxx, yyy, xout, yout, Hout, stats= rkintegration(
-                    FUN, switchfun,H, X, Y, EABS, EREL, xx, yy, XEND, WRK, stats, Verbose)
+                ffout, xxx, yyy, xout, yout, Hout, nout, npoints, stats= rkintegration(
+                    FUN, switchfun,H, X, Y, EABS, EREL, xx, yy, nout, npoints, XEND, WRK, stats, Verbose)
 
                 if nadd == 2:
                     # Rellenar matrices dinámicas xx e yy
@@ -344,19 +359,16 @@ def disode45(FUN, switchfun, tspan, Y, options):
                 Y = np.copy(yy[nout - 1, :])
             else:
                 tspanlast = [X, xendnext]
-                ffout, xxx, yyy, xout, yout, Hout, stats= rkintegration(
-                    FUN, switchfun,H, X, Y, EABS, EREL, xx, yy, XEND, WRK, stats, Verbose)
+                ffout, xx, yy, xout, yout, Hout, nout, npoints,stats= rkintegration(
+                    FUN, switchfun,H, X, Y, EABS, EREL, xx, yy, nout, npoints, XEND, WRK, stats, Verbose)
 
-         
                 # Concatenar resultados
-                xx = np.concatenate([xx[:nout], xxx[1:]])
-                yy = np.vstack([yy[:nout, :], yyy[1:, :]])
-                nout = len(xx)
-                X = xx[-1]
-                Y = np.copy(yy[-1, :])
-                
+                X = xx[nout-1]
+                Y = np.copy(yy[nout-1, :])
+      
             if abs(X - XEND) < 1e-14:
                 integration_flow = -5
+                
             else:
                 integration_flow = 5
                 
@@ -683,7 +695,7 @@ def normalintegration(FUN, switchfun, H, X, Y, WRK, gxy, xx, yy, nout, npoints, 
             xout = X
 
     neq = Y.shape[0]
-    chunk = int(min(max(100, 50 * Refine), Refine + np.floor((2**13) / neq)))
+    chunk = int(min(max(100, 50 * Refine), Refine + np.floor((2**13) / neq))+100)
     
     while advance:
         if H < max(5 * np.finfo(float).eps * X, np.finfo(float).eps * 0.001):
@@ -726,7 +738,7 @@ def normalintegration(FUN, switchfun, H, X, Y, WRK, gxy, xx, yy, nout, npoints, 
                         xx[tnew[ii]] = xtspan
                         yy[tnew[ii], :] = Y2
                 else:
-                    if nout + Refine > npoints:
+                    if nout + Refine+1 > npoints:
                         npoints += chunk
                         xx = np.append(xx, np.zeros(chunk))
                         yy = np.vstack([yy, np.zeros((chunk, neq))])
@@ -906,7 +918,7 @@ def classifypoint(x, y, inddisin, FUN, switchfun, stats, tol, rundata):
     ind_restantes = ind[ind != -1]
     inddisout[ndisin:ndis] = ind_restantes
     
-    if ndis > 15:
+    if ndis > 5:
         xout = x
         yout = y
         gout = g0
@@ -919,10 +931,6 @@ def classifypoint(x, y, inddisin, FUN, switchfun, stats, tol, rundata):
 
     # Calcular los vectores normales a las superficies de conmutación
     for i in range(ndis):
-        # Ajustamos el índice por si gradcomponents usa índices basados en 1 de MATLAB
-        idx_matlab = inddisout[i] + 1 
-        # Si tu struct ya viene corregido a Python, usa simplemente gradcomponents[inddisout[i]]
-        
         if exactgradient and gradcomponents[inddisout[i]] == 1:
             ggt[i], stats = gradt(switchfun, x, y, inddisout[i], min(1.e-8, tol / 10), stats)
             ggxd[:, i] = gradswitchfun(x, y, inddisout[i])
@@ -975,7 +983,7 @@ def gradt(switchfun, t, y, ind, tol, stats):
         gt = (g1[ind] - g2[ind]) / e
         
     elif tol > 1.e-11:
-        n = max(3, math.floor(15 + math.log10(tol)))
+        n = max(3, np.floor(15 + np.log10(tol)))
         e = 10**(-n)
         g1 = switchfun(t + e, y)[0]
         g1=np.atleast_1d(g1)
@@ -1715,8 +1723,7 @@ def slide(FUN, switchfun, H, X, Y, WRK, g0, xx, yy, indsliding, endslid,
         return WRKout, xout, yout, gout, Hout, integration_flow, xdis, xx, yy, nout, npoints, stats
 
     neq = Y.shape[0]
-    # chunk = min(max(100, 50 * Refine), Refine + floor((2^13)/neq))
-    chunk = int(min(max(100, 50 * Refine), Refine + np.floor((2**13) / neq)))
+    chunk = int(min(max(100, 50 * Refine), Refine + np.floor((2**13) / neq))+100)
 
     while advance and X < XEND:
         H = min(H, XEND - X)
@@ -2346,7 +2353,7 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
     """
     
   # Extraer variables desde el objeto rundata de forma segura utilizando getattr
-    minfortangent = [getattr(rundata, 'minfortangent1', 0), getattr(rundata, 'minfortangent2', 0)]
+ #   minfortangent = [getattr(rundata, 'minfortangent1', 0), getattr(rundata, 'minfortangent2', 0)]
     Verbose = getattr(rundata, 'Verbose', 0)
     gradcomponents = getattr(rundata, 'gradcomponents', [])
     xend = getattr(rundata, 'Xend', 0)
@@ -2645,8 +2652,8 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
             ll = np.zeros(ndis - len(indexit))
             res_proj = proj(FUN, switchfun, indsliding, xout, yout, wt, w, ll, stats, tol, rundata)
             ypro, l1, fout, xout, yout, disctype, indsliding1, endslid, gout, isterminal, direction, errorproj, stats = res_proj
-        else:
-            fout = FUN(xout, yout)
+ #       else:
+ #           fout = FUN(xout, yout)
         return (WRKout, xout, yout, gout, Hout, integration_flow, xx, yy, tdis, ydis, idis, indsliding, nout, npoints, stats)
 
     elif switchpoint == 4:
@@ -2839,7 +2846,7 @@ def twodiscon(FUN, switchfun, x, y, tol, inddis, g0, ggt, ggxd, nono, stats, run
 
     # eps en MATLAB para un número escalar es np.finfo(float).eps
     # eps(x) es la distancia al siguiente número en coma flotante.
-    paso = max(1000 * np.spacing(x), tol / 1000)
+ #   paso = max(1000 * np.spacing(x), tol / 1000)
     cond11a = (outputside[0, 0] == 0 and outputside[1, 0] == 0 and outputside[0, 1] == 1)
     cond11b = (outputside[0, 0] == 0 and outputside[1, 0] == 2 and outputside[1, 1] == 1)
 
@@ -2969,6 +2976,7 @@ def twodiscon(FUN, switchfun, x, y, tol, inddis, g0, ggt, ggxd, nono, stats, run
             return xout, yout, fout, gout, disctype, indsliding, endslid, outputsideout, stats
 
     elif cond11a or cond11b:
+        print("pasa por el fallo ")
         xout, yout, fout, gout = xout11, yout11, fout11, gout11
         indsliding = []
         disctype = 1
@@ -3046,18 +3054,18 @@ def twodiscon(FUN, switchfun, x, y, tol, inddis, g0, ggt, ggxd, nono, stats, run
     return xout, yout, fout, gout, disctype, indsliding, endslid, outputsideout, stats
 
 def threediscon(FUN, switchfun, x, y, tol, gpast, inddispast, inddis, g0, ggt, ggxd, nono, stats, rundata):
-    minfortangent = [rundata.minfortangent1, rundata.minfortangent2]
+#    minfortangent = [rundata.minfortangent1, rundata.minfortangent2]
     Verbose = rundata.Verbose
-    gradswitchfun = rundata.Gradient
+ #   gradswitchfun = rundata.Gradient
 
     # Aseguramos que inddis sea un array de NumPy unidimensional
     inddis = np.atleast_1d(inddis)
     ndis = inddis.shape[0]
-    search = True
+#    search = True
     indsal = ndis - 1  # Ajuste base 0
     indfirst1 = 0
     indfirst2 = 1
-    probar = False
+#    probar = False
 
     order = np.arange(ndis)
     orderinv = order.copy()
@@ -3272,11 +3280,11 @@ def threediscon(FUN, switchfun, x, y, tol, gpast, inddispast, inddis, g0, ggt, g
             return xout, yout, fout, gout, disctype, indsliding, endslid, outputsideout, stats
 
         elif np.any((outputside1 - outputside2) != 0):
-            endslid1a = np.append(endslid1, endslid0)[orderinv]
-            endslid2a = np.append(endslid2, endslid0)[orderinv]
+#            endslid1a = np.append(endslid1, endslid0)[orderinv]
+#            endslid2a = np.append(endslid2, endslid0)[orderinv]
             outputside1a = np.append(outputside1, endslid0)[orderinv]
             outputside2a = np.append(outputside2, endslid0)[orderinv]
-            indsala = indsal
+ #           indsala = indsal
             
             indsal = np.where((outputside1a - outputside2a) != 0)[0]
             ndissal = indsal.shape[0]
@@ -3378,11 +3386,11 @@ def threediscon(FUN, switchfun, x, y, tol, gpast, inddispast, inddis, g0, ggt, g
 
     if Verbose >= 3:
         # Nota: Asume existencia previa de la variable 'inddisout' en el scope global si no es argumento
-        print(f'\n 3 discontinuities, x, y, indsliding {x} {y[0]} {inddisout}\n')
+        print(f'\n 3 discontinuities, x, y, indsliding {x} {y[0]} \n')
 
     return xout, yout, fout, gout, disctype, indsliding, endslid, outputsideout, stats
 
-def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, XEND, WRK, stats, Verbose):
+def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, nout, npoints, XEND, WRK, stats, Verbose):
     """
     This function integrates the problem along a non sliding region
     """
@@ -3395,13 +3403,15 @@ def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, XEND, WRK, stats,
     UROUND = np.finfo(float).eps  # equivalente a eps(1.0) en MATLAB
     xout = X
     yout = np.copy(Y)
+    neq = Y.shape[0]
     
-    ff = np.copy(WRK[:, 0])
+#    ff = np.copy(WRK[:, 0])
     
     Hout = H
     TOL = EABS + EREL * np.max(np.abs(Y))
     H = TOL
     yyy = np.copy(yy.T)  # yy' transpuesto
+    chunk = int(np.floor((2**13) / neq)+100)
     
     while advance:
         if EJECUTAR:  # Executed only at accepted steps
@@ -3410,10 +3420,9 @@ def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, XEND, WRK, stats,
                 X = XEND
                 yout = np.copy(Y)
                 xout = X
-                integration_flow = -5
+#                integration_flow = -5
                 ffout = np.copy(WRK[:, 0])
-                yy = np.copy(yyy.T)
-                return ffout, xx, yy, xout, yout, Hout, stats
+                return ffout, xx, yy, xout, yout, Hout, nout, npoints, stats
             
             if (X + H - XEND) > 0.0:
                 H = XEND - X
@@ -3423,13 +3432,17 @@ def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, XEND, WRK, stats,
                 print(f"\n Minimum step size  h={H} attained at X= {X} \n  Integration stopped \n")
             yout = np.copy(Y)
             ffout = np.copy(WRK[:, 0])
-            integration_flow = -1
-            return ffout, xx, yy, xout, yout, Hout, stats
+ #           integration_flow = -1
+            return ffout, xx, yy, xout, yout, Hout, nout, npoints, stats
 
         XPH, Y1, WRKout, ERR, stats = CMR54D(FUN, X, H, Y, WRK, stats)
         TOL= EABS + EREL* max(abs(Y1));
         if ERR <= TOL:
             # Accepted step
+            if nout > npoints-1:
+                     npoints += chunk
+                     xx = np.append(xx, np.zeros(chunk))
+                     yy = np.vstack([yy, np.zeros((chunk, neq))])
             if Verbose >= 0:
                 print(f"\n Paso aceptado H, X, XPH {H:20.15g}   [{X:20.15g}, {XPH:20.15g}]")
                 
@@ -3440,8 +3453,11 @@ def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, XEND, WRK, stats,
             ffout = np.copy(WRK[:, 0])
             Y = np.copy(Y1)
             X = XPH
-            xx = np.append(xx, X)
-            yyy = np.column_stack((yyy, Y)) # Asegurando dimensiones correctas
+            nout +=1
+            xx[nout - 1] = XPH
+            yy[nout - 1, :] = Y1
+ #           xx = np.append(xx, X)
+ #           yyy = np.column_stack((yyy, Y)) # Asegurando dimensiones correctas
             
             FAC = min(0.9 * (TOL / (ERR + 1e-17))**(1.0 / 2.0), 2.0)
             if REJECT:
@@ -3463,11 +3479,11 @@ def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, XEND, WRK, stats,
             EJECUTAR = False
             
     yy = np.copy(yyy.T)
-    return ffout, xx, yy, xout, yout, Hout, stats
+    return ffout, xx, yy, xout, yout, Hout, nout, npoints, stats
 
 def CMR54D(FUN, X, H, Y, WRK, stats):
     """
-    Advance of one step by the CMR5(4) pair
+    Advance of one step by the CMR5(4)D pair
     """
     A = np.array([
         [0, 0, 0, 0, 0, 0, 0],
@@ -3486,7 +3502,6 @@ def CMR54D(FUN, X, H, Y, WRK, stats):
     B1 = np.array([-0.000882201938392711047700974918454, 0, 0, 0.632177414748733110758337278349, 
                    -0.282232701759180326509200083357, 0.650937488948839926798563779927, 0])
 
-    # En Python los índices comienzan en 0 (K de 2 a 7 en MATLAB equivale a 1:6 en Python)
     for K in range(1, 7):
         HH = H * C[K]
         # Nota: en Python WRK[:, 0:K] toma las columnas de 0 hasta K-1
@@ -3507,26 +3522,47 @@ def CMR54D(FUN, X, H, Y, WRK, stats):
 
     return XPH, Y1, WRKout, ERR, stats
 
+def disodeset(*args):
+    """
+    Crea o modifica una estructura de opciones equivalente a disodeset de MATLAB.
+    
+    PROPIEDADES:
+    - AbsTol: Tolerancia de error absoluto [escalar positivo o vector, por defecto None]
+    - RelTol: Tolerancia de error relativo [escalar positivo, por defecto None]
+    - Gradient: Manejador de función para el gradiente de la función de eventos
+    - GradientComponents: Componentes del gradiente
+    - InitialStep: Tamaño de paso inicial sugerido [escalar positivo]
+    - EventControl: Tipo de control para la detección de discontinuidades
+    - ActionSwitch: Función de salida instalable [function_handle]
+    - Refine: Factor de refinamiento de salida [entero positivo]
+    - Verbose: Tipo de información impresa durante la integración
+    """
+    
+    # Definir valores por defecto (None o los valores que prefieras)
 
-def solucion(x):
-    E = 1000.0
-    t1 = 1.0
-    t2 = 1.0 + 1.0 / E
-    t3 = 2.0 + 1.0 / E
-    t4 = 2.0 + 2.0 / E
-    t7 = 6.0 + 6.0 / E
-
-    xxdis = np.array([0.0, 1.0, 1.001, 2.001, 2.002, 3.002, 3.003, 4.003, 4.004, 5.004, 5.005, 6.005, 6.006])
-
-    if x <= xxdis[1]:
-        solu = np.array([-2.0 * x**2 / 2.0 + x, -2.0 * x + 1.0])
-    elif x <= xxdis[2]:
-        solu = np.array([E * (x - t1)**2 - (x - t1), 2.0 * E * (x - t1) - 1.0])
-    elif x <= xxdis[3]:
-        solu = np.array([-(x - t2)**2 + (x - t2), -2.0 * (x - t2) + 1.0])
-    elif x <= t4:
-        solu = np.array([E * (x - t3)**2 - (x - t3), 2.0 * E * (x - t3) - 1.0])
-    else:
-        solu = np.array([-(x - t7)**2 + (x - t7), -2.0 * (x - t7) + 1.0])
+    options = SimpleNamespace()
+    options.AbsTol=1.e-4
+    options.RelTol=1.e-4
+    options.Gradient = None
+    options.ActionSwitch=None
+    options.InitialStep = 0
+    options.EventControl=0
+    options.Refine=0
+    options.Verbose=0
+    options.GradientComponents=np.array([])
+    options.nargout = 2
+    
+    if len(args) % 2 != 0:
+        raise ValueError("Los argumentos deben venir en parejas de 'nombre', valor.")
+    
+    # 3. Recorrer la lista de 2 en 2 (nombre en las posiciones pares, valor en las impares)
+    for i in range(0, len(args), 2):
+        key = args[i]
+        value = args[i+1]
         
-    return solu
+        if hasattr(options, key):
+            setattr(options, key, value) 
+        else:
+            raise ValueError(f"Propiedad no reconocida: '{key}'")
+
+    return options
