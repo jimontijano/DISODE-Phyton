@@ -3,7 +3,7 @@ import sys
 from struct import Struct
 from types import SimpleNamespace
 
-def disode45(FUN, switchfun, tspan, Y, options):
+def disode45(FUN, switchfun, tspan, Y, options=None):
     """
 
    DISODE45  is a program for the numerical integration of ODEs with
@@ -38,18 +38,18 @@ def disode45(FUN, switchfun, tspan, Y, options):
     Y = np.array(Y, dtype=float).flatten()
     
  # 1. Configuration of the de defaul values if they are nor provided in 'options'
-   
+ 
     if options is None:
        options = SimpleNamespace()
     if not hasattr(options, 'AbsTol'): options.AbsTol = 1e-4
     if not hasattr(options, 'RelTol'): options.RelTol = 1e-4
     if not hasattr(options, 'Gradient'): options.Gradient = None
     if not hasattr(options, 'ActionSwitch'): options.ActionSwitch = None
+    if not hasattr(options, 'GradientComponents'): options.GradientComponents=np.array([])
     if not hasattr(options, 'InitialStep'): options.InitialStep = 0
     if not hasattr(options, 'EventControl'): options.EventControl = 0
     if not hasattr(options, 'Refine'): options.Refine = 1
     if not hasattr(options, 'Verbose'): options.Verbose = 0
-    if not hasattr(options, 'GradientComponents'): options.GradientComponents = np.array([])
     if not hasattr(options, 'nargout'): options.nargout = 2  # Por defecto devuelve (T, Y, ...)
 
     EABS = options.AbsTol
@@ -59,15 +59,18 @@ def disode45(FUN, switchfun, tspan, Y, options):
     eventcontrol = options.EventControl
     Refine = options.Refine
     Verbose = options.Verbose
-    gradcomponents = options.GradientComponents
+    gradcomponents=options.GradientComponents
+ 
  
     IFIR = 1
     rundata = options  # Enlazar la configuración para compartirla
+    tspan=np.atleast_1d(tspan)
     
  # 2. Inicialitation of the problem
     if IFIR == 1:
         IFIR = 0
         X = tspan[0]
+
         XEND = tspan[-1]
         ntspan = len(tspan)
         neq = len(Y)
@@ -96,10 +99,10 @@ def disode45(FUN, switchfun, tspan, Y, options):
         g0a, _, _ = switchfun(X, Y)
         g0=np.atleast_1d(g0a)
         stats[9] += 1  # stats(10) en MATLAB -> evaluaciones de la manifold function
-        
-        
-        if gradcomponents.ndim == 0:
+          
+        if gradcomponents.size == 0:
             gradcomponents = np.ones_like(g0)
+            options.GradientComponents=gradcomponents
             
         if Verbose >= 1:
             print(f"\n Dimension: {Y.shape}")
@@ -138,24 +141,24 @@ def disode45(FUN, switchfun, tspan, Y, options):
         if disctype == 3:
             tdis.append(X)
             ydis.append(np.copy(Y))
-            idis.append(-inddis)
+            idis.append(-(inddis+1))
             stats[6] += 1  # stats(7) en MATLAB -> deslizamiento
             integration_flow = 2
         elif disctype == 1:
-            idis.append(inddis)
+            idis.append(inddis+1)
             stats[5] += 1  # stats(6)
             tdis.append(X)
             ydis=np.copy(Y)
         elif disctype == -5:
             tdis.append(X)
             ydis=np.copy(Y)
-            idis.append(-inddis)
+            idis.append(-(inddis+1))
             stats[6] += 1
             integration_flow = 4
         elif disctype == -6:
             tdis.append(X)
             ydis.append(np.copy(Y))
-            idis.append(-inddis)
+            idis.append(-(inddis+1))
             stats[6] += 1
             integration_flow = 6
  #       integration_flow=4
@@ -180,22 +183,21 @@ def disode45(FUN, switchfun, tspan, Y, options):
                     print(f"\n  Integration restarted, possible fail at X= {X} {H}, {disctype}")
                 elif integration_flow == 5:
                     print(f"\n  First step or Integration restarted  {X}  {np.linalg.norm(Y)} {disctype}")
-            
             xout, yout, ff, gout, disctype, indsliding, endslid, stats = classifypoint(
                 X, Y, inddis, FUN, switchfun, stats, TOL, rundata
             )
-    
+            
             X = xout
             Y = np.copy(yout)
             g0 = np.copy(gout)
             WRK[:, 0] = ff
             integration_flow = 0
-            
             if disctype == 1:
                 disctype = 0
                 integration_flow = 0
             elif disctype == 3:
                 integration_flow = 2
+                idis.append(-(indsliding+1))
             elif disctype == -5:
                 integration_flow = 4
             elif disctype == -6:
@@ -232,7 +234,6 @@ def disode45(FUN, switchfun, tspan, Y, options):
                 FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis, nout, npoints, stats, tol, rundata
             )
             
-            
             if Verbose >= 1:
                 gina, _, _ = switchfun(X, Y)
                 gin=np.atleast_1d(gina)
@@ -263,7 +264,7 @@ def disode45(FUN, switchfun, tspan, Y, options):
                 
         # CONTROL DE FLUJO 2: Integración en superficie de deslizamiento (sliding)
         elif integration_flow == 2:
-            if Verbose >= 0:
+            if Verbose >= 1:
                 print(f"\n Enter slide X, Y, H, indsliding: {X} {np.linalg.norm(Y)} {H} {indsliding}")
                 
                 
@@ -526,6 +527,8 @@ def RKNEW(FUN, switchfun, X, H, Y, XEND, WRK, checkall, gxy, stats, EABS, EREL):
     xnew = min(X + 1.1 * H, XEND)
     ynew = ESTIRANEW(X, Y, WRKout, H, xnew)
     gyx, _, direction = switchfun(xnew, ynew)
+    gyx=np.atleast_1d(gyx)
+    direction=np.atleast_1d(direction)
     stats[9] += 1
     gnew = gyx.copy()
     auxa = (np.sign(gyx) * np.sign(gxy)) <= 0
@@ -534,8 +537,9 @@ def RKNEW(FUN, switchfun, X, H, Y, XEND, WRK, checkall, gxy, stats, EABS, EREL):
     
     if checkall == 0:
         if ERR > TOL or auxend:
+            
             for K in range(1, 7):
-                Y2 = Y + (H * (WRK[:, :K] @ A[K, :K]))
+                Y2 = Y + (H * (WRK[:, :K] @ A[K-1, :K]))
                 gyxa, _, direction = switchfun(X + H * C[K], Y2)
                 gyx=np.atleast_1d(gyxa)
                 stats[9] += 1
@@ -854,8 +858,9 @@ def classifypoint(x, y, inddisin, FUN, switchfun, stats, tol, rundata):
         print(f"\nEnter classifypoint  {x} {inddis}")
 
     # Detectar si el punto pertenece a alguna superficie de conmutación
-    g0a, _, _ = switchfun(x, y)
+    g0a, _, direction = switchfun(x, y)
     g0=np.atleast_1d(g0a)
+    direction=np.atleast_1d(direction)
     stats[9] += 1  # indexación 0 (originalmente stats(10))
     
     fout = FUN(x, y)
@@ -866,7 +871,6 @@ def classifypoint(x, y, inddisin, FUN, switchfun, stats, tol, rundata):
     eps_y = np.finfo(y.dtype).eps if hasattr(y, 'dtype') else np.finfo(float).eps
     
     paso = 1000 * max(100 * eps_x, max(np.atleast_1d(eps_y)) / max(0.001, np.linalg.norm(fout)))
-    
     xxminus = x - paso
     yyminus = y - paso * fout
     gma, _, _ = switchfun(xxminus, yyminus)  # Punto antes de x,y
@@ -876,9 +880,20 @@ def classifypoint(x, y, inddisin, FUN, switchfun, stats, tol, rundata):
     yyplus = y + paso * fout
     gpa, _, _ = switchfun(xxplus, yyplus)  # Punto después de x,y
     gp=np.atleast_1d(gpa)
+ 
     stats[9] += 1
     eps_1 = np.finfo(float).eps
-    if np.all(gp * gm > 0) and np.all(np.abs(g0) > 500 * eps_1):
+ 
+    # Encontrar las superficies donde el punto conmuta
+    # Ajuste de condiciones lógicas con NumPy
+    condicion0=np.abs(g0) <= 500 * eps_1
+    condicion1=(gp * gm ) <= 0
+    condition2=gp*direction >=0
+    condicion = (condicion0 + condicion1)*condition2
+    
+    ind = np.where(condicion >= 1 )[0]  # Devuelve índices basados en 0
+  #  if np.all(gp * gm > 0) and np.all(np.abs(g0) > 500 * eps_1):
+    if ind.size==0:
         xout = x
         yout = y
         gout = g0
@@ -889,12 +904,6 @@ def classifypoint(x, y, inddisin, FUN, switchfun, stats, tol, rundata):
         indsliding = np.array([])
         return xout, yout, fout, gout, disctype, indsliding, endslid, stats
 
-    # Encontrar las superficies donde el punto conmuta
-    # Ajuste de condiciones lógicas con NumPy
-    condicion = np.atleast_1d((np.abs(g0) <= 500 * eps_1) + (gp * gm <= 0))
-    
-    ind = np.where(condicion >= 1)[0]  # Devuelve índices basados en 0
-    
     if np.atleast_1d(inddis).size == 1 and np.all(inddis == 0):
         inddis = np.array([])
         
@@ -917,7 +926,6 @@ def classifypoint(x, y, inddisin, FUN, switchfun, stats, tol, rundata):
     # El resto de elementos que no eran -1
     ind_restantes = ind[ind != -1]
     inddisout[ndisin:ndis] = ind_restantes
-    
     if ndis > 5:
         xout = x
         yout = y
@@ -947,6 +955,7 @@ def classifypoint(x, y, inddisin, FUN, switchfun, stats, tol, rundata):
             FUN, switchfun, x, y, xxminus, yyminus, xxplus, yyplus, tol,
             inddisout, g0, ggt[0], ggxd, nono, stats, rundata
         )
+
        
     elif ndis == 2:
         xout, yout, fout, gout, disctype, indsliding, endslid, outputsideout, stats = twodiscon(
@@ -1177,6 +1186,7 @@ def onediscon(FUN, switchfun, x, y, xxminus, yyminus, xxplus, yyplus, tol,
     f1 = FUN(xxminus, yyminus)
     f2 = FUN(xxplus, yyplus)
     stats[8] += 2  # stats(9) en MATLAB es stats[8] en Python
+    
 
     # Llamada a la función externa disconflow
     # Nota: Asegúrate de que 'disconflow' ya esté traducida y disponible en tu entorno
@@ -1219,8 +1229,8 @@ def disconflow(FUN, switchfun, x, y, xminus, xplus, yyminus, yyplus, inddis, gt,
     normgrad = np.sqrt(gt**2 +np.linalg.norm(gfx)**2)
     
     if abs(gt) < 1.e-14:
-        normf1 = max(eps, np.linalg.norm(f1))
-        normf2 = max(eps, np.linalg.norm(f2))
+        normf1 = max(1+eps, np.linalg.norm(f1))
+        normf2 = max(1+eps, np.linalg.norm(f2))
     else:
         normf1 = np.sqrt(1 + np.linalg.norm(f1)**2)
         normf2 = np.sqrt(1 + np.linalg.norm(f2)**2)
@@ -1257,7 +1267,6 @@ def disconflow(FUN, switchfun, x, y, xminus, xplus, yyminus, yyplus, inddis, gt,
     # --- Lógica de Clasificación de la Discontinuidad ---
     
     # Caso 1: Campo vectorial tangente a ambos lados
-  
     if max(abs(gfxf1), abs(gfxf2)) < minfortangent[0]:
         if verbose >= 4:
             print("\n Warning! the vector field is tangent at both sides of the switching surface ")
@@ -1266,7 +1275,6 @@ def disconflow(FUN, switchfun, x, y, xminus, xplus, yyminus, yyplus, inddis, gt,
         
         endslid = max(gfxf1, gfxf2) - minfortangent[0]
         outputside = 0
-        
         if np.linalg.norm(f2 - f1) < 150 * np.linalg.norm(yplus - yminus) + abs(xplus - xminus):
             endslid = 10 * eps
             if gfxf2 >= 0:
@@ -1392,7 +1400,6 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
     ydis=np.asarray(ydis)
 
     fout = WRK[:, 0].copy() if WRK.ndim > 1 else WRK.copy() # Primera columna de WRK
-
     # -----------------------------------------------------------------------
     # Lower extreme of the interval
     # -----------------------------------------------------------------------
@@ -1453,7 +1460,7 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
         eps_1 = np.spacing(1.0)
         if np.min(np.abs(gg1)) < 10.0 * eps_1 and np.abs(X1 - xend) <= 10.0 * eps_1:
             inddis = np.where(np.abs(gg1) < 10.0 * eps_1)[0]
-            idis = np.append(idis, inddis)
+            idis.append(inddis)
             stats[5] += 1  # stats(6)
             if Verbose >= 2:
                 print(f"\n Discontinuity at X1: {X1} {ynew[0]}")
@@ -1467,7 +1474,7 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
                     
         elif np.min(np.abs(gg1)) < 10.0 * eps_1:
             inddis = np.where(np.abs(gg1) < 10.0 * eps_1)[0]
-            idis = np.append(idis, inddis)
+            idis.append(inddis)
             stats[5] += 1  # stats(6)
             if Verbose >= 2:
                 print(f"\n Discontinuity at X1: {X1} {ynew[0]}")
@@ -1513,7 +1520,6 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
     xx1 = X0
     xx2 = X1
     ii = 0 # En Python empezamos en 0, iteramos hasta < 60 (equivalente a 1 a 60 en MATLAB)
-    
     while np.abs(xx2 - xx1) / 2.0 >= 1.0 * max(np.spacing(xx1), eps_1) and valuea >= 1.0 * eps_1 and ii < 60:
         if Verbose >= 2 and ii == 0:
             print('\n Refining discontinuity with secant method')          
@@ -1529,6 +1535,7 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
         gnewa, isterminal, direction = switchfun(xnew, ynew)
         gnew=np.atleast_1d(gnewa)
         isterminal=np.atleast_1d(isterminal)
+        direction=np.atleast_1d(direction)
         if np.isscalar(isterminal):
             isterminal=np.array([isterminal])
         if np.isscalar(direction):
@@ -1557,10 +1564,8 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
         print(f'\n Secant method attained the maximum of iterations {ii}')
     if Verbose >= 1:
         print(f'\n  discontinuity found at X={xnew:22.17}, {np.linalg.norm(ynew)}')
-
     tdis = np.append(tdis, xnew)
     ydis = np.vstack([ydis, ynew]) if ydis.size else np.array([ynew])
-
     # -----------------------------------------------------------------------
     # Guardar resultados en los históricos xx e yy
     # -----------------------------------------------------------------------
@@ -1580,22 +1585,23 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
                 nout += 1
                 xx[nout - 1] = xrefine
                 yy[nout - 1, :] = Y2
-        nout += 1
-        xx[nout - 1] = xnew
-        yy[nout - 1, :] = ynew
+   #     nout += 1
+   #     xx[nout - 1] = xnew
+   #     yy[nout - 1, :] = ynew
 
     inddis = ind[0]
+    
 
     # -----------------------------------------------------------------------
     # Clasificación del punto numérico hallado
     # -----------------------------------------------------------------------
-    
+ 
     if np.any(isterminal[ind] < 0):
         yout = doatswitch(xnew, ynew)
         xout = xnew
         gout = gg0
         inddis = 0
-        idis = np.append(idis, inddis)
+        idis.append(inddis+1)
         stats[5] += 1  # stats(6)
         integration_flow = 5
         if Verbose >= 1:
@@ -1609,7 +1615,7 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
             
         if np.any((isterminal[ind] == 1) & ((direction[ind] * gg0[ind] <= 0) == 1)):
             integration_flow = -2
-            idis = np.append(idis, inddis)
+            idis.append(inddis+1)
             stats[5] += 1  # stats(6)
             if Verbose >= 1:
                 print('\n the switching point ends the integration')
@@ -1628,21 +1634,20 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
     # Convertir a array de 1D si disctype devuelve un escalar para evitar errores de indexación
     disctype = np.atleast_1d(disctype)
     endslid_arr = np.atleast_1d(endslid)
-
     if disctype[0] == 3 and np.abs(endslid_arr[0]) <= 1.e-5:
-        idis = np.append(idis, -inddis)
+        idis.append(-(inddis+1))
         stats[6] += 1  # stats(7)
         if Verbose >= 1:
             print(f'\n Tangent point at:  {xnew}  {ynew[0]}')
         integration_flow = 2
     elif disctype[0] == 3 and np.any(endslid_arr < 0):
-        idis = np.append(idis, -inddis)
+        idis.append(-(inddis+1))
         stats[6] += 1  # stats(7)
         if Verbose >= 2:
             print(f'\n Filippov point {xnew} {ynew[0]}')
         integration_flow = 2
     elif disctype[0] == 1:
-        idis = np.append(idis, inddis)
+        idis.append(inddis+1)
         stats[5] += 1  # stats(6)
         if Verbose >= 1:
             print(f'\n Transversal discontinuity, exit at: {xnew} {ynew[0]}')
@@ -1650,13 +1655,13 @@ def FindDisc(FUN, switchfun, X, Y, H, WRK, xx, yy, xdisaprox, tdis, ydis, idis,
     elif disctype[0] == -5:
         integration_flow = 4
     elif disctype[0] == 0:
-        idis = np.append(idis, inddis)
+        idis.append(inddis+1)
         stats[5] += 1  # stats(6)
         integration_flow = 0
     else:
         if Verbose >= 0:
             print(f'\n Other discontinuity, exit at {xnew} {ynew[0]}, {endslid} {disctype} {inddis}')
-        idis = np.append(idis, inddis)
+        idis.append(inddis+1)
         stats[5] += 1  # stats(6)
         integration_flow = 0
 
@@ -1805,7 +1810,7 @@ def slide(FUN, switchfun, H, X, Y, WRK, g0, xx, yy, indsliding, endslid,
                             Y2 = estirapro(FUN, switchfun, inddis, X, Y, WRK, H, xrefine, stats, wt, w, TOL, rundata)
                             nout += 1
                             xx[nout - 1] = xrefine
-                            yy[nout - 1, :] = Y2
+                            yy[nout - 1, :] = Y2[0]
 
                     nout += 1
                     xx[nout - 1] = XPH
@@ -2366,14 +2371,13 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
     
     WRKout = np.copy(WRK)
     Hout = max(H, 1.e-9)
-    inddis = np.atleast_1d(indsliding)
+    inddis = np.atleast_1d(indsliding) #  sliding surfaces
     ndis = len(inddis)
     wt = np.zeros(ndis)
     
     Y = np.atleast_1d(Y)
     neq = Y.shape[0]
     w = np.zeros((neq, ndis))
-    
     # Bucle de gradientes
     for i in range(ndis):
         idx = inddis[i]
@@ -2413,11 +2417,11 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
     
     ind = 0
     if newdiscon:
-        ind = np.where(gcond == 1)[0]
+        ind = np.where(gcond == 1)[0]  #  new discon index
         
     indexit = 0
     if endfilippov:
-        indexit = np.where(endslid1[:ndis] > 0)[0]
+        indexit = np.where(endslid1[:ndis] > 0)[0]  # possible exit sliding discon index
 
     xout = xpro
     yout = np.copy(ypro)
@@ -2427,16 +2431,16 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         value1 = -1
         switchpoint = 3
         indexit = 0 
-    elif endfilippov and newdiscon:
+    elif endfilippov and newdiscon:  # exit sliding and new discon
         value1 = -min(np.min(np.abs(gg1[ind])), np.abs(np.min(endslid1[indexit])))
         switchpoint = 4
-    elif newdiscon:
+    elif newdiscon:   #  new discon
         value1 = -np.min(np.abs(gg1[ind]))
         switchpoint = 1
-    elif endfilippov:
+    elif endfilippov:  # exit sliding
         value1 = -np.abs(np.min(endslid1[indexit]))
         switchpoint = 2
-    else:
+    else:                     # no discon at all
         if Verbose >= 0:
             print(f"\n Phantom pro X {X}")
             print(f"\n Phantom pro Discon endslid0 !! {endslid0}")
@@ -2470,7 +2474,6 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
     value = value1
     if Verbose >= 2:
         print('\n Refining discontinuity with secant method in finddiscpro')
-
     while (abs(xx2 - xx1) >= 100 * np.spacing(max(abs(x1), 1.0)) or (switchpoint == 1 and valueb <= -1.e-6)) and ii < 160 and valueb <= -1.e-14:
         if abs(value1 - value0) > 1.e-15 and ii <= 30:
             xnew = x1 - value1 * (x1 - x0) / (value1 - value0)
@@ -2537,7 +2540,6 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         x0, value0 = x1, value1
         x1, value1 = xnew, value
         ii += 1
-
     # Guardar trayectorias tdis e ydis
     tdis = list(tdis) + [xnew]
     ydis = np.vstack([ydis, ynew.flatten()])
@@ -2559,9 +2561,9 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
                 nout += 1
                 xx[nout-1] = xrefine  
                 yy[nout-1, :] = Y2.flatten()
-        nout += 1
-        xx[nout-1] = xnew
-        yy[nout-1, :] = ynew.flatten()
+  #      nout += 1
+  #      xx[nout-1] = xnew
+  #      yy[nout-1, :] = ynew.flatten()
 
     if ii >= 160 and Verbose >= 0:
         print(f"\n Warning !!! Too many secant iterations, {ii} {value} {xx2-xx1}")
@@ -2570,7 +2572,6 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         print(f"\n Secant finished {xnew}")
     if Verbose >= 1:
         print(f"\n discontinuity found (sliding) at X={xnew}, disctype={disctype}, switchpoint={switchpoint}")
-
     # Análisis del camino a proceder final
     indsliding=np.atleast_1d(indsliding)
     disctype=disctypeout
@@ -2582,7 +2583,7 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         
     elif (switchpoint == 1 or switchpoint == 4) and len(indsliding) > len(inddis) and isterminal[indsliding[-1]] == 1:
         integration_flow = -2
-        idis = list(idis) + list(inddis)
+        idis = list(idis) + list(inddis+1)
         stats[5] += 1
         if Verbose >= 1:
             print('\n the switching point ends the integration')
@@ -2591,7 +2592,7 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         
     elif switchpoint == 3:
         integration_flow = -5
-        idis = list(idis) + list(inddis)
+        idis = list(idis) + list(inddis+1)
         stats[5] += 1
         if Verbose >= 1:
             print('\n the tangent switching point ends the integration')
@@ -2609,12 +2610,12 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         WRKout[:, 0] = f1.flatten()
         if len(indsliding) == len(inddis):
             indsliding = np.copy(inddis)
-            idis = list(idis) + list(inddis)
+            idis = list(idis) + list(ind+1)
             if Verbose >= 2:
                 print(f'\n Transversal discontinuity inside sliding region at X= {xnew}')
             return (WRKout, xout, yout, gout, Hout, integration_flow, xx, yy, tdis, ydis, idis, indsliding, nout, npoints, stats)
         else:
-            idis = list(idis) + list(-inddis)
+            idis = list(idis) + list(-(ind+1))
             stats[6] += 1
             if Verbose >= 3:
                 print(f'\n New sliding point at X= {xnew}')
@@ -2624,14 +2625,14 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         WRKout[:, 0] = f1.flatten()
         if np.all(endslid >= 0):
             integration_flow = 0
-            idis = list(idis) + list(-inddis)
+            idis = list(idis) + list(-(inddis+1))
             stats[7] += 1
             if Verbose >= 3:
                 print(f'\n Exit from all sliding at X= {xnew}')
             indsliding = np.array([])
         else:
             integration_flow = 2
-            idis = list(idis) + list(inddis)
+            idis = list(idis) + list(inddis+1)
             stats[7] += 1
             if Verbose >= 3:
                 print(f'\n Exit from some manifold sliding at X= {xnew}')
@@ -2660,7 +2661,7 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         if np.all(endslid > 0):
             WRKout[:, 0] = f1.flatten()
             integration_flow = 0
-            idis = list(idis) + list(-inddis)
+            idis = list(idis) + list(-(inddis+1))
             stats[7] += 1
             if Verbose >= 3:
                 print(f'\n Exit from all sliding and new transversal discontinuity at X= {xnew}')
@@ -2668,7 +2669,7 @@ def FindDiscpro(FUN, switchfun, H, X, Y, WRK, xx, yy, xdis, tdis, ydis, idis, in
         else:
             WRKout[:, 0] = f1.flatten()
             integration_flow = 2
-            idis = list(idis) + list(-inddis)
+            idis = list(idis) + list(-(inddis+1))
             stats[7] += 1
             if Verbose >= 3:
                 print(f'\n Exit from some sliding and new discontinuity at X= {xnew}')
@@ -2976,7 +2977,6 @@ def twodiscon(FUN, switchfun, x, y, tol, inddis, g0, ggt, ggxd, nono, stats, run
             return xout, yout, fout, gout, disctype, indsliding, endslid, outputsideout, stats
 
     elif cond11a or cond11b:
-        print("pasa por el fallo ")
         xout, yout, fout, gout = xout11, yout11, fout11, gout11
         indsliding = []
         disctype = 1
@@ -3443,7 +3443,7 @@ def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, nout, npoints, XE
                      npoints += chunk
                      xx = np.append(xx, np.zeros(chunk))
                      yy = np.vstack([yy, np.zeros((chunk, neq))])
-            if Verbose >= 0:
+            if Verbose >= 2:
                 print(f"\n Paso aceptado H, X, XPH {H:20.15g}   [{X:20.15g}, {XPH:20.15g}]")
                 
             stats[0] = stats[0] + 1  # Accepted steps counter Naccpt (stats(1) en MATLAB)
@@ -3469,7 +3469,7 @@ def rkintegration(FUN, switchfun, H, X, Y, EABS, EREL, xx, yy, nout, npoints, XE
             
         else:
             # Rejected step
-            if Verbose >= 0:
+            if Verbose >= 2:
                 print(f"\nPASO rechazado {H}   [{X:30.20e}, {XPH}]")
                 
             FAC = max(0.9 * (TOL / (ERR + 1e-12))**(1.0 / 5.0), 0.1)
@@ -3544,12 +3544,12 @@ def disodeset(*args):
     options.AbsTol=1.e-4
     options.RelTol=1.e-4
     options.Gradient = None
+    options.GradientComponents=np.array([])
     options.ActionSwitch=None
     options.InitialStep = 0
     options.EventControl=0
     options.Refine=0
     options.Verbose=0
-    options.GradientComponents=np.array([])
     options.nargout = 2
     
     if len(args) % 2 != 0:
