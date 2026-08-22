@@ -36,7 +36,8 @@ options=disodeset('AbsTol',1.e-4,'RelTol',1.e-4,
                  'ActionSwitch', actionatswitch);
 y0=np.array([15, 1])
 tout,yout,tdis,ydis,idis,stats = disode45(fun,
-                              gfun, [0,20], y0, options);
+                              gfun, [0,20], y0, options)
+plt.plot(tout,yout[:,0],[0,20],[22,22],'r--',[0,20],[23.5,23.5],'r--')
 
 
 #
