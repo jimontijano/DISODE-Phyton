@@ -22,7 +22,7 @@ def gfun(t,y):
 #  Call to disode45
 #
 y0=[3, 0]
-tout,yout,tdis,ydis,idis,stats =disode45(fun, gfun,[0,20], y0)
+tout,yout,tdis,ydis,idis,stats =disode45(fun, gfun,[0,5], y0)
 #
 #  display of the results
 #

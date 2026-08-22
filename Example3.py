@@ -20,14 +20,10 @@ def fun(t,y):
     u1=-(r1/m1)*y[2]-(k1/m1)*y[0]+b0/m1+(a0/m1)*np.cos(w*t);
     u2=-(r2/m2)*y[3]-(k2/m2)*y[1];
     if y[0]-y[1]>= d/2 and u1>=u2:   # and   y[2] - y[3] >= -1e-4 
-       aux = -((r1 + r2) / (m1 + m2)) * y[2] - ((k1 + k2) / (m1 + m2)) * y[0] 
-       + b0 / (m1 + m2) + (k2 * d / (2 * m1 + 2 * m2))
-       + (a0 / (m1 + m2)) * np.cos(w * t)
+       aux = -((r1 + r2) / (m1 + m2)) * y[2] - ((k1 + k2) / (m1 + m2)) * y[0]+ b0 / (m1 + m2) + (k2 * d / (2 * m1 + 2 * m2))+ (a0 / (m1 + m2)) * np.cos(w * t)
        f=np.array([y[2], y[2], aux, aux]) 
     elif y[1]-y[0]>= d/2 and u2>=u1:   #    and Y[2] - Y[3] <= 1e-4
-       aux = -((r1 + r2) / (m1 + m2)) * y[2] - ((k1 + k2) / (m1 + m2)) * y[0] 
-       + b0 / (m1 + m2) - (k2 * d / (2 * m1 + 2 * m2)) 
-       + (a0 / (m1 + m2)) * np.cos(w * t)       
+       aux = -((r1 + r2) / (m1 + m2)) * y[2] - ((k1 + k2) / (m1 + m2)) * y[0]+ b0 / (m1 + m2) - (k2 * d / (2 * m1 + 2 * m2)) + (a0 / (m1 + m2)) * np.cos(w * t)       
        f=np.array([y[2], y[2], aux, aux])
     else:
        f=np.array([y[2], y[3], u1, u2])
@@ -100,12 +96,11 @@ def actionatswitch(t,y):
 #
 
 options=disodeset('RelTol',1.e-5,'AbsTol',1.e-5,
-                        'ActionSwitch', actionatswitch)
+                        'ActionSwitch', actionatswitch,'Verbose',1)
 y0 = np.array([0.2,0.3,0,0])
-[tout,yout,tdis,ydis,idis,stats]=disode45(fun, gfun,
-                        [0,10], y0,options);
+[tout,yout,tdis,ydis,idis,stats]=disode45(fun, gfun,[0,1.15], y0,options);
 
-
+print("pasos=",tout.shape)
 
 #
 #  Plot of the figures
