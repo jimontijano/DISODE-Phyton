@@ -25,6 +25,7 @@ def fun(t,y):
 #
 def gfun(t,y):
     if y[0]<0.005:
+#       g=np.array([y[0]-0.005, y[1]])
        g=np.array([y[0]-0.005, 1])
     else:
        g=np.array([y[0]-0.005, y[1]])
@@ -35,10 +36,10 @@ def gfun(t,y):
 #
 #  Call to disode45
 #
-options=disodeset('Refine',10,'Verbose',0)
+options=disodeset('AbsTol',1.e-4,'RelTol',1.e-4,'Refine',10)
 y0 = [0, 0]
 tout,yout,tdis,ydis,idis,stats = disode45(fun,
-                                    gfun,[0,3], y0,options)
+                                    gfun,[0,3.0], y0,options)
 
 
 #
